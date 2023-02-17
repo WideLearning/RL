@@ -36,9 +36,10 @@ class MultiArmedBanditEnv(gym.Env):
         std: nd.array with shape (self.k,) and dtype np.float32
             Sets the standard deviatino of reward for each arm.
         """
-        assert means.shape == stds.shape
-        assert means.ndim == 1
-        assert render_mode is None or render_mode in self.metadata["render_modes"]
+        assert means.shape == stds.shape, f"means: {means.shape} ≠ stds: {stds.shape}"
+        assert means.ndim == 1, f"means.ndim = {means.ndim}"
+        render_modes = [None] + self.metadata["render_modes"]
+        assert render_mode in render_modes, f"render_mode = {render_mode}"
         self.render_mode = render_mode
         self.k = means.size
         self.means = means
@@ -72,7 +73,7 @@ class MultiArmedBanditEnv(gym.Env):
             Only reward is meaningful in this case.
 
         """
-        assert self.action_space.contains(action)
+        assert self.action_space.contains(action), f"bad action {action}"
 
         terminated = False
         truncated = False
