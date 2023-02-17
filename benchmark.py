@@ -71,13 +71,13 @@ eps_greedy = lambda env: EpsGreedy(k=env.means.size, config={"eps": 0.05})
 ucb = lambda env: UCB(k=env.means.size, config={"c": 3.})
 optimal = lambda env: Optimal(k=env.means.size, config={"means": env.means})
 
-current = ucb
+current = greedy
 
-# print(under_curve(current))
-plot_training(current, r"UCB with $c=3$")
-plt.savefig("images/ucb.svgz")
+print(under_curve(current)) # mean area under curve, its standard deviation
+plot_training(current, r"Greedy")
+plt.savefig("images/greedy.svg")
 
 # optimal 350±10
 # eps_greedy 242±10
 # ucb 262±10
-# greedy
+# greedy 225±10
