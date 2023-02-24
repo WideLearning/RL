@@ -42,7 +42,7 @@ class MultiArmedBanditPolicy:
         pass
 
 
-class Optimal(MultiArmedBanditPolicy):
+class OptimalBandit(MultiArmedBanditPolicy):
     """
     Algorithm that always selects action with the largest mean reward.
     Uses internal information of environment to do so.
@@ -142,3 +142,170 @@ class UCB(MultiArmedBanditPolicy):
     def learn(self, action: np.int64, reward: np.float32):
         self.sum[action] += reward
         self.cnt[action] += 1
+
+
+abs_sum = 0
+bias_sum = 0
+bias_cnt = 0
+
+
+def bias_check(true_value, approximation):
+    global abs_sum, bias_sum, bias_cnt
+    abs_sum += np.abs(true_value)
+    bias_sum += approximation - true_value
+    bias_cnt += 1
+
+    norm = lambda x: np.linalg.norm(x)
+    if bias_cnt & (bias_cnt - 1) == 0:
+        print("bias cnt:", bias_cnt)
+        print("mean abs:", norm(abs_sum / bias_cnt))
+        print("mean bias:", norm(bias_sum / bias_cnt))
+
+
+class OptimalGradientBandit(MultiArmedBanditPolicy):
+    """
+    Exact gradient step would be:
+
+    `H_{t+1}(a) - H_t(a) = lr * \\pi_t(a) * (q(a) - E(R))`
+
+    It performs it by using internal information from the environment.
+    """
+
+    def __init__(self, k: int, config: dict):
+        """
+        `k`: int
+            Number of arms.
+        `config`: dict
+            All extra parameters, including:
+            `means`: np.array of floats
+                Actual action values from the environment.
+            `lr`: float in (0, ∞)
+                Learning rate.
+        """
+        super().__init__(k, config)
+        self.means = config["means"]
+        self.lr = config["lr"]
+        self.reward_sum = 0
+        self.reward_cnt = 0
+        self.H = np.zeros(shape=(self.k), dtype=np.float32)
+
+    def policy(self):
+        return np.exp(self.H) / np.exp(self.H).sum()
+
+    def predict(self, exploration=True) -> np.int64:
+        if exploration:
+            return np.random.choice(self.k, p=self.policy())
+        else:
+            return np.argmax(self.H)
+
+    def learn(self, action: np.int64, reward: np.float32):
+        # True gradient
+        pi = self.policy()
+        expected_rewards = (pi * self.means).sum()
+        grad = pi * (self.means - expected_rewards)
+
+        # # Stochastic gradient
+        # baseline = self.reward_sum / self.reward_cnt if self.reward_cnt != 0 else reward
+        # self.reward_sum += reward
+        # self.reward_cnt += 1
+        # test_grad = np.zeros(self.k)
+        # test_grad[action] = reward - baseline
+        # test_grad -= (reward - baseline) * pi
+
+        # bias_check(true_value=grad - grad.max(), approximation=test_grad - test_grad.max())
+
+        # import torch
+        # torch_H = torch.tensor(self.H, requires_grad=True)
+        # torch_expected_rewards = (torch.softmax(torch_H, dim=0) * torch.tensor(self.means)).sum()
+        # torch_expected_rewards.backward()
+        # torch_grad = torch_H.grad.numpy()
+
+        self.H += self.lr * grad
+        self.H -= self.H.max()
+
+
+class GradientBandit(MultiArmedBanditPolicy):
+    """
+    Exact gradient step would be:
+
+    `H_{t+1}(a) - H_t(a) = lr * \\pi_t(a) * (q(a) - E(R))`
+
+    Here the following unbiased approximation is used:
+
+    `H_{t+1}(a) - H_t(a) = lr * ([A_t = a] - \\pi_t(a)) * (R_t - \\bar R_t)`
+    """
+
+    def __init__(self, k: int, config: dict):
+        """
+        `k`: int
+            Number of arms.
+        `config`: dict
+            All extra parameters, including:
+            `lr`: float in (0, ∞)
+                Learning rate.
+        """
+        super().__init__(k, config)
+        self.lr = config["lr"]
+        self.reward_sum = 0
+        self.reward_cnt = 0
+        self.H = np.zeros(shape=(self.k), dtype=np.float32)
+
+    def policy(self):
+        return np.exp(self.H) / np.exp(self.H).sum()
+
+    def predict(self, exploration=True) -> np.int64:
+        if exploration:
+            return np.random.choice(self.k, p=self.policy())
+        else:
+            return np.argmax(self.H)
+
+    def learn(self, action: np.int64, reward: np.float32):
+        baseline = self.reward_sum / self.reward_cnt if self.reward_cnt != 0 else reward
+        self.reward_sum += reward
+        self.reward_cnt += 1
+
+        self.H -= self.lr * (reward - baseline) * self.policy()
+        self.H[action] += self.lr * (reward - baseline)
+        self.H -= self.H.max()
+
+
+class GradientBanditBiased(MultiArmedBanditPolicy):
+    """
+    Exact gradient step would be:
+
+    `H_{t+1}(a) - H_t(a) = lr * \\pi_t(a) * (q(a) - E(R))`
+
+    Here the following (biased, but in some cases useful) approximation is used:
+
+    `H_{t+1}(a) - H_t(a) = lr * [A_t = a] * (R_t - \\bar R_t)`
+    """
+
+    def __init__(self, k: int, config: dict):
+        """
+        `k`: int
+            Number of arms.
+        `config`: dict
+            All extra parameters, including:
+            `lr`: float in (0, ∞)
+                Learning rate.
+        """
+        super().__init__(k, config)
+        self.lr = config["lr"]
+        self.reward_sum = 0
+        self.reward_cnt = 0
+        self.H = np.zeros(shape=(self.k), dtype=np.float32)
+
+    def predict(self, exploration=True) -> np.int64:
+        if exploration:
+            softmax = lambda x: np.exp(x) / np.exp(x).sum()
+            return np.random.choice(self.k, p=softmax(self.H))
+        else:
+            return np.argmax(self.H)
+
+    def learn(self, action: np.int64, reward: np.float32):
+        baseline = self.reward_sum / self.reward_cnt if self.reward_cnt != 0 else reward
+        self.reward_sum += reward
+        self.reward_cnt += 1
+
+        self.H[action] += self.lr * (reward - baseline)
+        self.H -= self.H.max()

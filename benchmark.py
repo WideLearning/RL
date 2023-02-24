@@ -6,11 +6,22 @@ from typing import Callable
 
 import gymnasium as gym
 import numpy as np
-from tqdm import tqdm
-from scipy.ndimage import gaussian_filter1d
-from algorithms.MultiArmedBandit import MultiArmedBanditPolicy, Optimal, EpsGreedy, UCB
+from algorithms.MultiArmedBandit import (
+    UCB,
+    EpsGreedy,
+    GradientBandit,
+    GradientBanditBiased,
+    MultiArmedBanditPolicy,
+    OptimalBandit,
+    OptimalGradientBandit,
+    abs_sum,
+    bias_cnt,
+    bias_sum,
+)
 from matplotlib import pyplot as plt
-from matplotlib.ticker import MultipleLocator, AutoMinorLocator
+from matplotlib.ticker import AutoMinorLocator, MultipleLocator
+from scipy.ndimage import gaussian_filter1d
+from tqdm import tqdm
 
 plt.rcParams["text.usetex"] = True
 
@@ -18,7 +29,9 @@ import implementations
 
 
 def rewards_during_training(
-    build_agent: Callable[[gym.Env], MultiArmedBanditPolicy], seed=0
+    build_agent: Callable[[gym.Env], MultiArmedBanditPolicy],
+    seed=0,
+    num_steps=300,
 ) -> np.ndarray[np.float32]:
     np.random.seed(seed)
     env = gym.make(
@@ -28,7 +41,6 @@ def rewards_during_training(
         render_mode="ansi",
     )
     agent = build_agent(env)
-    num_steps = 300
     rewards = np.zeros(num_steps)
     _observation, _info = env.reset(seed=seed)
     for i in range(num_steps):
@@ -56,28 +68,40 @@ def plot_training(build_agent: Callable[[], MultiArmedBanditPolicy], title):
     plt.title(title, fontdict={"size": 20})
 
 
-def under_curve(build_agent: Callable[[], MultiArmedBanditPolicy]) -> tuple[np.float32, np.float32]:
+def under_curve(
+    build_agent: Callable[[], MultiArmedBanditPolicy]
+) -> tuple[np.float32, np.float32]:
     runs = 10000
     rewards = np.stack(
         [rewards_during_training(build_agent, seed) for seed in tqdm(range(runs))]
     )
     mean = rewards.mean(axis=0)
     stds = rewards.std(axis=0) / np.sqrt(runs)
-    return mean.sum(), stds.sum() # just summing standard deviations, because they are correlated
+    return (
+        mean.sum(),
+        stds.sum(),
+    )  # just summing standard deviations, because they are correlated
 
 
 greedy = lambda env: EpsGreedy(k=env.means.size, config={"eps": 0.0})
 eps_greedy = lambda env: EpsGreedy(k=env.means.size, config={"eps": 0.05})
-ucb = lambda env: UCB(k=env.means.size, config={"c": 3.})
-optimal = lambda env: Optimal(k=env.means.size, config={"means": env.means})
+ucb = lambda env: UCB(k=env.means.size, config={"c": 3.0})
+optimal = lambda env: OptimalBandit(k=env.means.size, config={"means": env.means})
+gradient_biased = lambda env: GradientBanditBiased(k=env.means.size, config={"lr": 0.2})
+gradient = lambda env: GradientBandit(k=env.means.size, config={"lr": 0.2})
+optimal_gradient = lambda env: OptimalGradientBandit(
+    k=env.means.size, config={"means": env.means, "lr": 0.2}
+)
 
-current = greedy
-
-print(under_curve(current)) # mean area under curve, its standard deviation
-plot_training(current, r"Greedy")
-plt.savefig("images/greedy.svg")
+current = optimal_gradient
+print(under_curve(current))
+plot_training(current, r"Optimal gradient ascent, $\alpha=0.2$")
+plt.savefig("images/optimal_gradient.svg")
 
 # optimal 350±10
 # eps_greedy 242±10
 # ucb 262±10
 # greedy 225±10
+# optimal_gradient 308±10
+# gradient_biased 256±10
+# gradient 247±10
