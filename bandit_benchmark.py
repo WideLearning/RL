@@ -6,7 +6,7 @@ from typing import Callable
 
 import gymnasium as gym
 import numpy as np
-from algorithms.MultiArmedBandit import (
+from algorithms.multiarmed_bandit import (
     UCB,
     EpsGreedy,
     GradientBandit,

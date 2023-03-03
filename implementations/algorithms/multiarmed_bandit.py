@@ -17,6 +17,7 @@ class MultiArmedBanditPolicy:
                 Ratio of non-greedy moves.
         """
         self.k = k
+        self.config = config
 
     def train(self, env: gym.Env, num_steps: int):
         """
