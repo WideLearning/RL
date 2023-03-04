@@ -34,13 +34,13 @@ class MultiArmedBanditPolicy:
         With `exploration` set to `False` chooses the best action according to the current value function estimate.
         Otherwise, selects the next action according to the learning algorithm.
         """
-        pass
+        raise NotImplementedError
 
     def learn(self, action: np.int64, reward: np.float32):
         """
         Update parameters given that for the last `action` the agent received `reward`.
         """
-        pass
+        raise NotImplementedError
 
 
 class OptimalBandit(MultiArmedBanditPolicy):
@@ -97,8 +97,7 @@ class EpsGreedy(MultiArmedBanditPolicy):
     def predict(self, exploration=True) -> np.int64:
         if exploration and np.random.uniform(0, 1) < self.eps:
             return np.random.randint(low=0, high=self.k)
-        else:
-            return np.argmax(self.value_estimates())
+        return np.argmax(self.value_estimates())
 
     def learn(self, action: np.int64, reward: np.float32):
         self.q.update(action, reward)
@@ -178,8 +177,7 @@ class OptimalGradientBandit(MultiArmedBanditPolicy):
     def predict(self, exploration=True) -> np.int64:
         if exploration:
             return np.random.choice(self.k, p=self.policy())
-        else:
-            return np.argmax(self.H)
+        return np.argmax(self.H)
 
     def learn(self, action: np.int64, reward: np.float32):
         # True gradient
@@ -223,8 +221,7 @@ class GradientBandit(MultiArmedBanditPolicy):
     def predict(self, exploration=True) -> np.int64:
         if exploration:
             return np.random.choice(self.k, p=self.policy())
-        else:
-            return np.argmax(self.H)
+        return np.argmax(self.H)
 
     def learn(self, action: np.int64, reward: np.float32):
         baseline = self.reward_sum / self.reward_cnt if self.reward_cnt != 0 else reward
@@ -263,11 +260,12 @@ class GradientBanditBiased(MultiArmedBanditPolicy):
         self.H = np.zeros(shape=(self.k), dtype=np.float32)
 
     def predict(self, exploration=True) -> np.int64:
+        def softmax(x):
+            return np.exp(x) / np.exp(x).sum()
+
         if exploration:
-            softmax = lambda x: np.exp(x) / np.exp(x).sum()
             return np.random.choice(self.k, p=softmax(self.H))
-        else:
-            return np.argmax(self.H)
+        return np.argmax(self.H)
 
     def learn(self, action: np.int64, reward: np.float32):
         baseline = self.reward_sum / self.reward_cnt if self.reward_cnt != 0 else reward

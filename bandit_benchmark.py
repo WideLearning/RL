@@ -1,11 +1,13 @@
+# pylint: disable=wrong-import-position, unnecessary-lambda-assignment
+from typing import Callable
+
 import matplotlib as mpl
 
 mpl.use("TkAgg")  # otherwise gymnasium conflicts with matplotlib
 
-from typing import Callable
-
 import gymnasium as gym
 import numpy as np
+from algorithms.approximation import TableExp, TableMean
 from algorithms.multiarmed_bandit import (
     UCB,
     EpsGreedy,
@@ -15,14 +17,11 @@ from algorithms.multiarmed_bandit import (
     OptimalBandit,
     OptimalGradientBandit,
 )
-from algorithms.approximation import TableMean, TableExp
 from matplotlib import pyplot as plt
 from scipy.ndimage import gaussian_filter1d
 from tqdm import tqdm
 
 plt.rcParams["text.usetex"] = True
-
-import implementations
 
 
 def rewards_during_training(
@@ -97,10 +96,10 @@ optimal_gradient = lambda env: OptimalGradientBandit(
     k=env.means.size, config={"means": env.means, "lr": 0.2}
 )
 
-current = eps_greedy
+current = optimal_gradient
 print(under_curve(current))
 plot_training(current, r"Optimal gradient ascent, $\alpha=0.2$")
-# plt.savefig("images/optimal_gradient.svg")
+plt.savefig("images/optimal_gradient.svg")
 
 # optimal 350±10
 # eps_greedy 242±10

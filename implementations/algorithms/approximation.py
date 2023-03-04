@@ -1,4 +1,3 @@
-import numpy as np
 from typing import TypeVar, Generic, Hashable
 
 X = TypeVar("X")
@@ -18,7 +17,7 @@ class Approximator(Generic[X]):
         """
         self.config = config
 
-    def predict(x: X) -> float:
+    def predict(self, x: X) -> float:
         """
         `x`: X
             Argument for which value should be estimated.
@@ -28,7 +27,7 @@ class Approximator(Generic[X]):
         """
         raise NotImplementedError
 
-    def update(x: X, y: float):
+    def update(self, x: X, y: float):
         """
         Make `predict(x)` closer to `y`.
         `x`: X
