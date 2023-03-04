@@ -14,12 +14,9 @@ from algorithms.multiarmed_bandit import (
     MultiArmedBanditPolicy,
     OptimalBandit,
     OptimalGradientBandit,
-    abs_sum,
-    bias_cnt,
-    bias_sum,
 )
+from algorithms.approximation import TableMean, TableExp
 from matplotlib import pyplot as plt
-from matplotlib.ticker import AutoMinorLocator, MultipleLocator
 from scipy.ndimage import gaussian_filter1d
 from tqdm import tqdm
 
@@ -84,7 +81,14 @@ def under_curve(
 
 
 greedy = lambda env: EpsGreedy(k=env.means.size, config={"eps": 0.0})
-eps_greedy = lambda env: EpsGreedy(k=env.means.size, config={"eps": 0.05})
+eps_greedy = lambda env: EpsGreedy(
+    k=env.means.size,
+    config={"eps": 0.05, "q": TableMean({"default": np.inf})},
+)
+eps_greedy_exp = lambda env: EpsGreedy(
+    k=env.means.size,
+    config={"eps": 0.05, "q": TableExp({"default": 3.0, "lr": 0.1})},
+)
 ucb = lambda env: UCB(k=env.means.size, config={"c": 3.0})
 optimal = lambda env: OptimalBandit(k=env.means.size, config={"means": env.means})
 gradient_biased = lambda env: GradientBanditBiased(k=env.means.size, config={"lr": 0.2})
@@ -93,10 +97,10 @@ optimal_gradient = lambda env: OptimalGradientBandit(
     k=env.means.size, config={"means": env.means, "lr": 0.2}
 )
 
-current = optimal_gradient
+current = eps_greedy
 print(under_curve(current))
 plot_training(current, r"Optimal gradient ascent, $\alpha=0.2$")
-plt.savefig("images/optimal_gradient.svg")
+# plt.savefig("images/optimal_gradient.svg")
 
 # optimal 350±10
 # eps_greedy 242±10
