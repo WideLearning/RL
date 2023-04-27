@@ -1,12 +1,13 @@
-from random import random, choice
-from stats import complex_hash
-from matplotlib import pyplot as plt
-import torch
-from torch import nn
-import numpy as np
 from copy import deepcopy
-from board import Board, Turn
+from random import choice, random
 
+import numpy as np
+import torch
+from matplotlib import pyplot as plt
+from torch import nn
+
+from board import Board, Turn
+from stats import complex_hash
 
 best = 1
 

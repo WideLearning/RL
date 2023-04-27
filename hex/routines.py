@@ -1,5 +1,6 @@
-from board import Board
 from copy import deepcopy
+
+from board import Board
 
 
 def contest(size, first, second):

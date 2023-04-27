@@ -1,12 +1,11 @@
-from board import HexBoard, HexEnv
-from torch import nn
-import torch
-import numpy as np
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import gymnasium as gym
 import numpy as np
 import torch
+from torch import nn
+
+from board import HexBoard, HexEnv
 
 
 class Net(nn.Module):
