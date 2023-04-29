@@ -1,8 +1,6 @@
 from collections import deque
 from itertools import product
-from math import prod
 from typing import Optional
-from math import sin, cos, pi
 import numpy as np
 
 directions = frozenset([(0, -1), (0, 1), (-1, 0), (1, 0), (-1, 1), (1, -1)])
@@ -11,6 +9,7 @@ directions = frozenset([(0, -1), (0, 1), (-1, 0), (1, 0), (-1, 1), (1, -1)])
 TODO:
 - Rewrite all coordinates to 0...inner-1 and -frame...inner+frame-1
 """
+
 
 class HexBoard:
     """
@@ -251,7 +250,7 @@ class HexEnv(gym.Env):
         obs, reward, done, info = self.step_helper(action)
         return (obs, reward, done, info) if done else self.step_helper(action)
 
-    def reset(self):
+    def reset(self, _seed: None = None, _options: None = None):
         self.board = HexBoard(self.n, self.frame)
         return self._get_obs()
 
