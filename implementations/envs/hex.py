@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections import deque
 from itertools import product
 from typing import Any, Optional
@@ -37,7 +39,7 @@ class HexBoard:
         self.left = [(i, 0) for i in range(self.inner_size)]
         self.right = [(i, self.inner_size - 1) for i in range(self.inner_size)]
 
-    def inside(self, i: int, j: int) -> bool:
+    def inside_total(self, i: int, j: int) -> bool:
         """
         Args:
         - i: Row index.
@@ -49,6 +51,17 @@ class HexBoard:
         interval = range(-self.frame_size, self.inner_size + self.frame_size)
         return i in interval and j in interval
 
+    def inside_inner(self, i: int, j: int) -> bool:
+        """
+        Args:
+        - i: Row index.
+        - j: Column index.
+
+        Returns:
+        - bool: 0 ≤ i, j < inner_size
+        """
+        return i in range(self.inner_size) and j in range(self.inner_size)
+
     def neighbours_list(self, i: int, j: int) -> list[tuple[int, int]]:
         """
         Args:
@@ -59,7 +72,9 @@ class HexBoard:
         - List of neighbours of the given position.
         """
         return [
-            (i + di, j + dj) for di, dj in directions if self.inside(i + di, j + dj)
+            (i + di, j + dj)
+            for di, dj in directions
+            if self.inside_total(i + di, j + dj)
         ]
 
     def bfs(self, start: list[tuple[int, int]], player: int) -> np.ndarray:
@@ -73,15 +88,16 @@ class HexBoard:
         """
         q = deque(filter(lambda pos: self.get(*pos) == player, start))
         used = np.full((self.total_size, self.total_size), fill_value=False)
+        frame = self.frame_size
         for i, j in q:
-            used[i, j] = True
+            used[frame + i, frame + j] = True
 
         while q:
             i, j = q.popleft()
-            assert self.get(i, j) == player and (i, j) in used
+            assert self.get(i, j) == player and used[frame + i, frame + j]
             for ni, nj in self.neighbours_list(i, j):
-                if self.get(ni, nj) == player and not used[ni, nj]:
-                    used[ni, nj] = True
+                if self.get(ni, nj) == player and not used[frame + ni, frame + nj]:
+                    used[frame + ni, frame + nj] = True
                     q.append((ni, nj))
         return used
 
@@ -104,10 +120,10 @@ class HexBoard:
         Returns:
         - Value at the given position.
         """
-        assert self.inside(i, j), "position out of bounds"
+        assert self.inside_total(i, j), "position out of bounds"
         return self.board[i + self.frame_size][j + self.frame_size]
 
-    def put(self, i: int, j: int, player: int | None = None) -> None:
+    def put(self, i: int, j: int, player: int | None = None) -> HexBoard:
         """
         Args:
         - i: Row index, 0 ≤ i < inner_size
@@ -117,6 +133,7 @@ class HexBoard:
         assert not self.get(i, j), "cell is not empty"
         player = player or self.current_player()
         self.board[i + self.frame_size][j + self.frame_size] = player
+        return self
 
     def __str__(self) -> str:
         """
@@ -145,7 +162,7 @@ class HexBoard:
         full = [(i, j, self.get(i, j)) for i, j in product(range(n), repeat=2)]
         return [x for x in full if x[2]]
 
-    def from_pieces(self, pieces: list[tuple[int, int, int]]) -> None:
+    def put_list(self, pieces: list[tuple[int, int, int]]) -> HexBoard:
         """
         Adds the given list of pieces to the board.
 
@@ -154,6 +171,7 @@ class HexBoard:
         """
         for i, j, c in pieces:
             self.put(i, j, c)
+        return self
 
     def win(self) -> int:
         """
@@ -204,12 +222,15 @@ class HexEnv(gym.Env):
         super(HexEnv, self).__init__()
         self.inner_size = inner_size
         self.frame_size = frame_size
-        self.s = self.inner_size + 2 * self.frame_size
-        self.action_space = spaces.Box(
-            low=-1, high=1, shape=(self.inner_size, self.inner_size)
+        self.total_size = self.inner_size + 2 * self.frame_size
+        self.action_space = spaces.MultiDiscrete(
+            np.array([self.inner_size, self.inner_size])
         )
         self.observation_space = spaces.Box(
-            low=-1, high=1, shape=(6, 7, 7), dtype=np.float32
+            low=-1,
+            high=1,
+            shape=(6, self.total_size, self.total_size),
+            dtype=np.float32,
         )
         self.board = HexBoard(self.inner_size, self.frame_size)
 
@@ -218,43 +239,40 @@ class HexEnv(gym.Env):
         Returns:
         - np.ndarray: The current state of the board.
         """
-        check = parse_shape(self.observation_space.shape, "c h w")
-        return rearrange(self.board.to_features(), "c h w -> 1 c h w", **check)
+        return rearrange(
+            self.board.to_features(),
+            "c h w -> 1 c h w",
+            c=6,
+            h=self.total_size,
+            w=self.total_size,
+        )
 
-    def step_helper(self, action: int) -> tuple[np.ndarray, float, bool, dict]:
+    def step(
+        self, action: np.ndarray
+    ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         """
         Args:
-        - action: The action to take.
+        - action: Coordinates of the move.
 
         Returns:
         - The next observation, reward, status, and info.
         """
-        assert 0 <= action <= self.inner_size**2
-        i, j = np.unravel_index(action, (self.inner_size, self.inner_size))
-        done = False
-        reward = -1
-        info: dict[Any] = {}
+        i, j = action
+        assert self.board.inside_inner(i, j)
+        terminated = False
+        truncated = False
+        reward = 0.0
+        info: dict[str, Any] = {}
         if not self.board.get(i, j):
             self.board.put(i, j)
             w = self.board.win()
-            done = w != 0
+            terminated = float(w != 0)
             reward = w
-        return self._get_obs(), reward, done, info
-
-    def step(self, action: tuple[int, int]) -> tuple[np.ndarray, float, bool, dict]:
-        """
-        Args:
-        - action: The action to take.
-
-        Returns:
-        - Tuple[np.ndarray, float, bool, dict]: The next state, reward, done, and info.
-        """
-        obs, reward, done, info = self.step_helper(action)
-        return (obs, reward, done, info) if done else self.step_helper(action)
+        return self._get_obs(), reward, terminated, truncated, info
 
     def reset(
         self, seed: Optional[int] = None, _options: Optional[dict] = None
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, dict[str, Any]]:
         """
         Args:
         - _seed: The seed to use.
@@ -263,10 +281,9 @@ class HexEnv(gym.Env):
         Returns:
         - np.ndarray: The initial state of the board.
         """
-        if seed:
-            np.random.seed(seed)
+        super().reset(seed=seed)
         self.board = HexBoard(self.inner_size, self.frame_size)
-        return self._get_obs()
+        return self._get_obs(), {}
 
     def render(self, mode: str = "console") -> None:
         """
