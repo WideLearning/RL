@@ -1,6 +1,7 @@
 import unittest
-from algorithms.approximation import TableMean, TableExp
+
 import numpy as np
+from algorithms.approximation import TableExp, TableMean
 
 
 class TestTableMean(unittest.TestCase):
@@ -55,6 +56,7 @@ class TestTableExp(unittest.TestCase):
         self.assertEqual(t.predict(0), 3)
         self.assertEqual(t.predict(1), 3)
         self.assertEqual(t.predict(2), 2)
+
 
 if __name__ == "__main__":
     t: TableMean[int] = TableMean({"default": np.inf})
