@@ -1,38 +1,23 @@
 # pylint: disable=too-many-arguments
 import itertools
-from typing import TypeVar
+from typing import Any, Generic, TypeVar
 
 import gymnasium as gym
 import numpy as np
 
 from implementations.algorithms.approximation import Approximator
+from .logs import TrainingLogger
 
 ObservationT = TypeVar("ObservationT")
 ActionT = TypeVar("ActionT")
 
 
-class TrainingLogger:
-    def log_observation(self, observation: ObservationT):
-        print("observation:", observation)
-
-    def log_action(self, action: ActionT):
-        print("action:", action)
-
-    def log_reward(self, reward: float):
-        raise NotImplementedError
-
-    def new_episode(
-        self,
-    ):
-        raise NotImplementedError
-
-
-def get_actions(space: gym.Space) -> list[ActionT]:
+def get_actions(space: gym.Space) -> list[Any]:
     """
     `space`: gym.Space
         A finite action space constructed from `types`.
+
     Returns:
-    `actions`: list[A]
         A list of all possible actions from this space.
     """
 
@@ -78,7 +63,7 @@ def get_actions(space: gym.Space) -> list[ActionT]:
     ]
 
 
-class OnlinePolicy:
+class OnlinePolicy(Generic[ObservationT, ActionT]):
     """
     Abstract class for RL policies interacting with environment.
     """
@@ -101,6 +86,7 @@ class OnlinePolicy:
             action = self.predict(observation, actions, exploration=True)
             logger.log_action(action)
             new_observation, reward, terminated, truncated, _info = env.step(action)
+            reward = float(reward)
             logger.log_reward(reward)
             self.learn(observation, action, reward, new_observation, actions)
             if terminated or truncated:
@@ -134,9 +120,9 @@ class OnlinePolicy:
         raise NotImplementedError
 
 
-class EpsGreedy(OnlinePolicy):
+class QLearning(OnlinePolicy[ObservationT, ActionT]):
     """
-    ε-greedy strategy with on-policy action-value iteration.
+    Q-learning with ε-greedy exploration.
     """
 
     def __init__(self, config: dict):
@@ -159,7 +145,7 @@ class EpsGreedy(OnlinePolicy):
         self, observation: ObservationT, actions: list[ActionT], exploration=True
     ) -> ActionT:
         if exploration and np.random.random() < self.eps:
-            return np.random.choice(actions)
+            return actions[np.random.randint(0, len(actions))]
         evaluations = [(self.q.predict((observation, a)), a) for a in actions]
         return max(evaluations)[1]
 
@@ -171,5 +157,6 @@ class EpsGreedy(OnlinePolicy):
         new_observation,
         actions: list[ActionT],
     ):
-        G = self.predict(new_observation, actions)
-        self.q.update((observation, action), reward + self.gamma * G)
+        argmax_action = self.predict(new_observation, actions)
+        max_return = self.q.predict((new_observation, argmax_action))
+        self.q.update((observation, action), reward + self.gamma * max_return)

@@ -237,7 +237,7 @@ class HexEnv(gym.Env):
     def _get_obs(self) -> np.ndarray:
         """
         Returns:
-        - np.ndarray: The current state of the board.
+        - The current state of the board.
         """
         return rearrange(
             self.board.to_features(),
