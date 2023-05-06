@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 import gymnasium as gym
 import numpy as np
-from einops import parse_shape, rearrange
+from einops import rearrange
 from gymnasium import spaces
 
 directions = frozenset([(0, -1), (0, 1), (-1, 0), (1, 0), (-1, 1), (1, -1)])
@@ -266,12 +266,12 @@ class HexEnv(gym.Env):
         if not self.board.get(i, j):
             self.board.put(i, j)
             w = self.board.win()
-            terminated = float(w != 0)
+            terminated = w != 0
             reward = w
         return self._get_obs(), reward, terminated, truncated, info
 
     def reset(
-        self, seed: Optional[int] = None, _options: Optional[dict] = None
+        self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
     ) -> tuple[np.ndarray, dict[str, Any]]:
         """
         Args:
