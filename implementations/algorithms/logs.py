@@ -40,14 +40,14 @@ class ConsoleLogger(TrainingLogger):
 
     def log_reward(self, reward: float):
         self.current_reward += reward
+        self.rewards.append(reward)
         if self.log_rewards:
             print("reward:", reward)
-
-    def new_episode(self):
-        self.rewards.append(self.current_reward)
-        self.current_reward = 0
         n = len(self.rewards)
         if n & (n - 1) != 0:
             return
         a = np.array(self.rewards)
         print(f"--- {a.size} episodes, {a.mean()} mean reward ---")
+
+    def new_episode(self):
+        self.current_reward = 0

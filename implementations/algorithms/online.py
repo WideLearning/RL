@@ -160,3 +160,48 @@ class QLearning(OnlinePolicy[ObservationT, ActionT]):
         argmax_action = self.predict(new_observation, actions)
         max_return = self.q.predict((new_observation, argmax_action))
         self.q.update((observation, action), reward + self.gamma * max_return)
+
+
+class SoftmaxLearning(OnlinePolicy[ObservationT, ActionT]):
+    """
+    Q-learning where exploration policy is the softmax of the value function.
+    """
+
+    def __init__(self, config: dict):
+        """
+        `config`: dict
+            All extra parameters, including:
+            `q`: Approximator[tuple[O, A]]
+                How to estimate action-value function.
+            `gamma`: float in [0, 1]
+                Discount applied to returns: `G_t = R_{t+1} + gamma * R_{t+2} + gamma^2 * R_{t+2} + ...`.
+            `T`:
+                Temperature of softmax. Higher T means more random moves.
+        """
+        super().__init__(config)
+        self.q: Approximator[tuple[ObservationT, ActionT]] = config["q"]
+        self.gamma = config["gamma"]
+        self.T = config["T"]
+
+    def predict(
+        self, observation: ObservationT, actions: list[ActionT], exploration=True
+    ) -> ActionT:
+        if exploration:
+            values = np.array([self.q.predict((observation, a)) for a in actions])
+            values /= self.T
+            probs = np.exp(values) / np.exp(values).sum()
+            return np.random.choice(len(probs), p=probs)
+        evaluations = [(self.q.predict((observation, a)), a) for a in actions]
+        return max(evaluations)[1]
+
+    def learn(
+        self,
+        observation: ObservationT,
+        action: ActionT,
+        reward: float,
+        new_observation,
+        actions: list[ActionT],
+    ):
+        argmax_action = self.predict(new_observation, actions)
+        max_return = self.q.predict((new_observation, argmax_action))
+        self.q.update((observation, action), reward + self.gamma * max_return)
