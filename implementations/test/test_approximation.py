@@ -1,7 +1,9 @@
 import unittest
 
 import numpy as np
-from algorithms.approximation import TableExp, TableMean
+import torch
+from algorithms.approximation import DiffL2, TableExp, TableMean
+from torch import nn
 
 
 class TestTableMean(unittest.TestCase):
@@ -58,6 +60,23 @@ class TestTableExp(unittest.TestCase):
         self.assertEqual(t.predict(2), 2)
 
 
+class TestDiffL2(unittest.TestCase):
+    def test_parabola(self):
+        appr: DiffL2[str] = DiffL2(
+            nn.Sequential(nn.Linear(1, 32), nn.ReLU(), nn.Linear(32, 1)),
+            transform=lambda x: torch.tensor([len(x)], dtype=torch.float),
+            input_shape=(1,),
+            opt_builder=lambda p: torch.optim.Adam(p, lr=0.1),
+            n=1024,
+            k=10,
+            batch_size=32,
+        )
+        for i in range(100):
+            x = "a" * torch.randint(0, 10, ())
+            y = len(x) ** 2 + 0.5
+            appr.update(x, y)
+        self.assertAlmostEqual(appr.predict("b" * 5), 25.5, delta=3.0)
+
+
 if __name__ == "__main__":
-    t: TableMean[int] = TableMean({"default": np.inf})
-    print(t.predict(0))
+    pass
