@@ -189,6 +189,7 @@ class SoftmaxLearning(OnlinePolicy[ObservationT, ActionT]):
         if exploration:
             values = np.array([self.q.predict((observation, a)) for a in actions])
             values /= self.T
+            values -= values.max()
             probs = np.exp(values) / np.exp(values).sum()
             return np.random.choice(len(probs), p=probs)
         evaluations = [(self.q.predict((observation, a)), a) for a in actions]
