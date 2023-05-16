@@ -9,7 +9,7 @@ import seaborn as sns
 import torch
 from algorithms.approximation import DiffL2, TableMean
 from algorithms.logs import ConsoleLogger
-from algorithms.online import QLearning, SoftmaxLearning
+from algorithms.online import QLearning, AverageSoftmaxLearning
 from gymnasium.wrappers import TransformReward
 from torch import nn
 
@@ -36,7 +36,14 @@ def onehot(k, n):
     return torch.nn.functional.one_hot(torch.tensor(k).long(), num_classes=n).float()
 
 
-# agent = SoftmaxLearning({"q": TableMean({"default": 0.05}), "gamma": 0.9, "T": 0.1})
+agent = AverageSoftmaxLearning(
+    {
+        "q": TableMean({"default": 0.0}),
+        "e": TableMean({"default": 100.0}),
+        "T": 0.1,
+        "gamma": 0.999,
+    }
+)
 
 
 def fourier(i: int, j: int, max_i: int, max_j: int, k_i: int, k_j: int) -> torch.Tensor:
@@ -53,34 +60,34 @@ def fourier(i: int, j: int, max_i: int, max_j: int, k_i: int, k_j: int) -> torch
     return torch.tensor(features, dtype=torch.float32)
 
 
-agent = SoftmaxLearning(
-    {
-        "q": DiffL2(
-            model=nn.Sequential(
-                nn.LazyLinear(128),
-                nn.ReLU(),
-                nn.LazyLinear(32),
-                nn.ReLU(),
-                nn.LazyLinear(1),
-            ),
-            opt_builder=lambda p: torch.optim.Adam(p, lr=0.01),
-            transform=lambda x: torch.cat(
-                (fourier(x[0] // 12, x[0] % 12, 4, 12, 4, 3), onehot(x[1], 4))
-            ),
-            input_shape=(28,),
-            n=1024,
-            k=4,
-            batch_size=512,
-        ),
-        "gamma": 0.9,
-        "T": 0.5,
-    }
-)
+# agent = SoftmaxLearning(
+#     {
+#         "q": DiffL2(
+#             model=nn.Sequential(
+#                 nn.LazyLinear(128),
+#                 nn.ReLU(),
+#                 nn.LazyLinear(32),
+#                 nn.ReLU(),
+#                 nn.LazyLinear(1),
+#             ),
+#             opt_builder=lambda p: torch.optim.Adam(p, lr=0.01),
+#             transform=lambda x: torch.cat(
+#                 (fourier(x[0] // 12, x[0] % 12, 4, 12, 4, 3), onehot(x[1], 4))
+#             ),
+#             input_shape=(28,),
+#             n=1024,
+#             k=4,
+#             batch_size=512,
+#         ),
+#         "gamma": 0.9,
+#         "T": 0.5,
+#     }
+# )
 
 
 agent.train(
     env,
-    num_steps=2049,
+    num_steps=10**5,
     logger=ConsoleLogger(observations=False, actions=False, rewards=False),
 )
 
@@ -94,18 +101,30 @@ estimates = np.array(
     ]
 )
 
+variances = np.array(
+    [
+        [
+            [agent.e.predict((12 * row + col, dir)) for col in range(12)]
+            for row in range(4)
+        ]
+        for dir in range(4)
+    ]
+)
+
+print(agent.mean_reward())
 print(estimates)
+print(variances)
 
 fig, axn = plt.subplots(4, 1, sharex=True, sharey=True)
 dirs = ["up", "right", "down", "left"]
 for i in range(4):
-    sns.heatmap(estimates[i], ax=axn[i], cmap="bwr", vmin=-10, vmax=0)
+    sns.heatmap(estimates[i], ax=axn[i], cmap="bwr", vmin=-150, vmax=150)
     axn[i].set_title(f"{dirs[i]}")
 plt.tight_layout()
 plt.show()
 
 env = CliffWrapper("human")
-agent.T = 0.01
+# agent.T = 10.0
 agent.train(
     env,
     num_steps=10**5,

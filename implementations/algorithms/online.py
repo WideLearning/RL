@@ -5,7 +5,8 @@ from typing import Any, Generic, TypeVar
 import gymnasium as gym
 import numpy as np
 
-from implementations.algorithms.approximation import Approximator
+from implementations.algorithms.approximation import Approximator, Mean
+
 from .logs import TrainingLogger
 
 ObservationT = TypeVar("ObservationT")
@@ -164,7 +165,7 @@ class QLearning(OnlinePolicy[ObservationT, ActionT]):
 
 class SoftmaxLearning(OnlinePolicy[ObservationT, ActionT]):
     """
-    Q-learning where exploration policy is the softmax of the value function.
+    Q-learning where exploration policy is the softmax of the value function. Objective is discounted reward.
     """
 
     def __init__(self, config: dict):
@@ -191,7 +192,7 @@ class SoftmaxLearning(OnlinePolicy[ObservationT, ActionT]):
             values /= self.T
             values -= values.max()
             probs = np.exp(values) / np.exp(values).sum()
-            return np.random.choice(len(probs), p=probs)
+            return actions[np.random.choice(len(probs), p=probs)]
         evaluations = [(self.q.predict((observation, a)), a) for a in actions]
         return max(evaluations)[1]
 
@@ -206,3 +207,65 @@ class SoftmaxLearning(OnlinePolicy[ObservationT, ActionT]):
         argmax_action = self.predict(new_observation, actions)
         max_return = self.q.predict((new_observation, argmax_action))
         self.q.update((observation, action), reward + self.gamma * max_return)
+
+
+class AverageSoftmaxLearning(OnlinePolicy[ObservationT, ActionT]):
+    """
+    Q-learning where exploration policy is the softmax of the value function. Objective is average reward.
+    """
+
+    def __init__(self, config: dict):
+        """
+        `config`: dict
+            All extra parameters, including:
+            `q`: Approximator[tuple[O, A]]
+                How to estimate action-value function.
+            `e`: Approximator[tuple[O, A]]
+                How to estimate action-value function errors.
+            `gamma`: float in [0, 1]
+                Discount applied to returns: `G_t = R_{t+1} + gamma * R_{t+2} + gamma^2 * R_{t+2} + ...`.
+            `T`:
+                Temperature of softmax. Higher T means more random moves.
+        """
+        super().__init__(config)
+        # estimates expected action value
+        self.q: Approximator[tuple[ObservationT, ActionT]] = config["q"]
+        # estimates its dispersion
+        self.e: Approximator[tuple[ObservationT, ActionT]] = config["e"]
+        self.T = config["T"]
+        self.gamma = config["gamma"]
+        self.mean_reward = Mean(default=0.0)
+
+    def predict(
+        self, observation: ObservationT, actions: list[ActionT], exploration=True
+    ) -> ActionT:
+        if exploration:
+
+            def UCL(a):
+                oa = (observation, a)
+                mean = self.q.predict(oa)
+                std = np.sqrt(self.e.predict(oa))
+                return mean + self.T * std
+
+            values = np.array(list(map(UCL, actions)))
+            return actions[np.argmax(values)]
+        evaluations = [(self.q.predict((observation, a)), a) for a in actions]
+        return max(evaluations)[1]
+
+    def learn(
+        self,
+        observation: ObservationT,
+        action: ActionT,
+        reward: float,
+        new_observation,
+        actions: list[ActionT],
+    ):
+        r_mean = self.mean_reward(reward)  # update mean reward estimate
+        argmax_action = self.predict(new_observation, actions)
+        max_return = self.q.predict((new_observation, argmax_action))
+        # exploration_bonus = self.e.predict((new_observation, argmax_action))
+        old_q = self.q.predict((observation, action))
+        # upd_q = reward - r_mean + (max_return + self.T * exploration_bonus) * self.gamma
+        upd_q = reward - r_mean + max_return * self.gamma
+        self.e.update((observation, action), (old_q - upd_q) ** 2)
+        self.q.update((observation, action), upd_q)

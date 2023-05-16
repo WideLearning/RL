@@ -1,3 +1,4 @@
+from collections import defaultdict
 from itertools import cycle, islice
 from typing import Callable, Generic, Hashable, Iterator, TypeVar
 
@@ -42,9 +43,21 @@ class Approximator(Generic[X]):
         raise NotImplementedError
 
 
+class Mean:
+    def __init__(self, default=0.0):
+        self.mean = default
+        self.cnt = 0
+
+    def __call__(self, new_value=None):
+        if new_value is not None:
+            self.cnt += 1
+            self.mean += (new_value - self.mean) / self.cnt
+        return self.mean
+
+
 class TableMean(Approximator[H], Generic[H]):
     """
-    Stores means and counts for all arguments in a (hash) table.
+    Stores means and counts for all arguments in a table.
     """
 
     def __init__(self, config: dict):
@@ -55,21 +68,14 @@ class TableMean(Approximator[H], Generic[H]):
         """
         super().__init__(config)
         self.default = self.config.get("default", 0.0)
-        self.mean: dict[H, float] = {}
-        self.cnt: dict[H, int] = {}
+        self.mean: defaultdict[H, Mean] = defaultdict(lambda: Mean(self.default))
 
     def predict(self, x: H) -> float:
-        return self.mean.get(x, self.default)
+        return self.mean[x]()
 
     def update(self, x: H, y: float):
         assert isinstance(y, float)
-        count = self.cnt.setdefault(x, 0) + 1
-        current = self.mean.setdefault(x, self.default)
-        self.cnt[x] = count
-        if count == 1:
-            self.mean[x] = y
-        else:
-            self.mean[x] += (y - current) / count
+        self.mean[x](y)
 
 
 class TableExp(Approximator[H], Generic[H]):
