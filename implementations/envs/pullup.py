@@ -64,7 +64,7 @@ class LengthConstraint:
         i: int,
         j: int,
         length: M,
-        elasticity: N_per_M = 5e4,
+        elasticity: N_per_M,
     ):
         """Equivalent to an elastic spring between i-th and j-th point.
 
@@ -79,6 +79,20 @@ class LengthConstraint:
         self.length = length
         self.elasticity = elasticity
 
+    def contraction(
+        self,
+        position: np.ndarray,
+    ) -> float:
+        """
+        Args:
+            position (np.ndarray): Coordinates of the points in the system.
+
+        Returns:
+            float: Amount of attraction between i and j that this constraint produces.
+        """
+        cur = M(l2(position[self.j] - position[self.i]) + 1e-9)
+        return self.elasticity * (cur - self.length)
+
 
 class AngleConstraint:
     def __init__(
@@ -88,7 +102,7 @@ class AngleConstraint:
         j: int,
         min_angle: float,
         max_angle: float,
-        elasticity_moment: N = 1e4,
+        elasticity_moment: N,
     ):
         """Soft constraint on turn(vec(p[m] - p[i]), vec(p[j] - p[m])) to be in [min_angle, max_angle].
 
@@ -107,6 +121,24 @@ class AngleConstraint:
         self.max_angle = max_angle
         self.elasticity_moment = elasticity_moment
 
+    def torque(
+        self,
+        position: np.ndarray,
+    ) -> float:
+        """
+        Args:
+            position (np.ndarray): Coordinates of points in the system.
+
+        Returns:
+            float: Torque that this constraint produces for given positions.
+        """
+        im = position[self.m] - position[self.i]
+        mj = position[self.j] - position[self.m]
+        alpha = turn(im, mj)
+        return (
+            max(self.min_angle - alpha, 0) + min(self.max_angle - alpha, 0)
+        ) * self.elasticity_moment
+
 
 class PointSystem:
     def __init__(
@@ -122,11 +154,9 @@ class PointSystem:
         """
         self.n = n
         self.g = g
-        self.mass: list[Kg] = [np.random.lognormal() for i in range(n)]
-        self.position: list[Vector] = [np.random.normal(size=(2,)) for i in range(n)]
-        self.speed: list[Vector] = [
-            np.random.normal(size=(2,), scale=0.9) for i in range(n)
-        ]
+        self.mass: np.ndarray = np.random.lognormal((self.n,))
+        self.position: np.ndarray = np.random.normal(size=(self.n, 2))
+        self.speed: np.ndarray = np.zeros((self.n, 2))
         self.lengths: list[LengthConstraint] = []
         self.angles: list[AngleConstraint] = []
 
@@ -135,7 +165,7 @@ class PointSystem:
         i: int,
         j: int,
         length: M = None,
-        elasticity: N_per_M = 5e4,
+        elasticity: N_per_M = 1e5,
     ) -> None:
         actual_length = length or 0.0
         if length is None:
@@ -151,48 +181,49 @@ class PointSystem:
         j: int,
         min_angle: float,
         max_angle: float,
-        elasticity_moment: N = 1e4,
+        elasticity_moment: N = 3e4,
     ):
         self.angles.append(
             AngleConstraint(i, m, j, min_angle, max_angle, elasticity_moment)
         )
 
-    def E_pot(self) -> float:
+    def E_gravity(self) -> float:
         return -sum(m * np.dot(pos, self.g) for m, pos in zip(self.mass, self.position))
 
-    def E_kin(self) -> float:
+    def E_elastic(self) -> float:
+        elastic = lambda F, k: F**2 / (2 * k)
+        lengths = 0
+        for lc in self.lengths:
+            contraction = lc.contraction(self.position)
+            lengths += elastic(contraction, lc.elasticity)
+
+        angles = 0
+        for ac in self.angles:
+            torque = ac.torque(self.position)
+            angles += elastic(torque, ac.elasticity_moment)
+        return lengths + angles
+
+    def E_kinetic(self) -> float:
         return sum(m * np.dot(v, v) / 2 for m, v in zip(self.mass, self.speed))
 
-    def accelerations(self) -> list[Vector]:
-        a = [self.g.copy() for i in range(self.n)]
+    def accelerations(self) -> np.ndarray:
+        a = np.repeat(self.g.reshape(1, 2), self.n, axis=0)
         for lc in self.lengths:
-            i = lc.i
-            j = lc.j
-            p_i = self.position[i]
-            p_j = self.position[j]
-            base = lc.length
-            cur = M(l2(p_j - p_i) + 1e-9)
-            contraction = lc.elasticity * (cur - base)
-            F_ij = (p_j - p_i) / cur * contraction
-            a[i] += F_ij / self.mass[i]
-            a[j] -= F_ij / self.mass[j]
+            contraction = lc.contraction(self.position)
+            ij = self.position[lc.j] - self.position[lc.i]
+            F_ij = ij / (l2(ij) + 1e-9) * contraction
+            a[lc.i] += F_ij / self.mass[lc.i]
+            a[lc.j] -= F_ij / self.mass[lc.j]
 
         for ac in self.angles:
-            i = ac.i
-            m = ac.m
-            j = ac.j
-            im = self.position[m] - self.position[i]
-            mj = self.position[j] - self.position[m]
-            lef = ac.min_angle
-            rig = ac.max_angle
-            alpha = turn(im, mj)
-            torque = (max(lef - alpha, 0) + min(rig - alpha, 0)) * ac.elasticity_moment
-
+            torque = ac.torque(self.position)
+            im = self.position[ac.m] - self.position[ac.i]
+            mj = self.position[ac.j] - self.position[ac.m]
             F_j = torque * perp(mj) / (l2(mj) + 1e-9) ** 2
             F_i = torque * perp(im) / (l2(im) + 1e-9) ** 2
-            a[j] += F_j / self.mass[j]
-            a[i] += F_i / self.mass[i]
-            a[m] -= (F_i + F_j) / self.mass[m]
+            a[ac.j] += F_j / self.mass[ac.j]
+            a[ac.i] += F_i / self.mass[ac.i]
+            a[ac.m] -= (F_i + F_j) / self.mass[ac.m]
 
         return a
 
@@ -210,18 +241,32 @@ def simulate(
     system: PointSystem,
     dt: Sec,
 ):
-    old = deepcopy(system)
-    cur = deepcopy(system)
-    old_acc = old.accelerations()
-    friction = 0.99
-    for it in range(10):
-        cur_acc = cur.accelerations()
-        acc = [(a + b) / 2 for a, b in zip(old_acc, cur_acc)]
-        cur.speed = [friction * (v + a * dt) for v, a in zip(old.speed, acc)]
-        cur.position = [
-            x + (v_0 + v_1) / 2 * dt
-            for x, v_0, v_1 in zip(old.position, old.speed, cur.speed)
-        ]
+    def advance(old, acc, h):
+        cur = deepcopy(old)
+        cur.speed = np.clip(old.speed + acc * h, -5, 5)
+        cur.position = old.position + (old.speed + cur.speed) / 2 * h
+        return cur
+
+    """ 
+    Using 3/8 Runge-Kutta here:
+    0   | 
+    1/3 | 1/3
+    2/3 | -1/3  1
+     1  |  1   -1   1
+     -------------------
+        | 1/8  3/8 3/8 1/8
+    Numbers on the left are not important, because here the system is independent of time.
+    """
+    k1 = system.accelerations()
+    k2 = advance(system, k1, dt / 3).accelerations()
+    k3 = advance(system, -0.5 * k1 + 1.5 * k2, dt * 2 / 3).accelerations()
+    k4 = advance(system, k1 - k2 + k3, dt).accelerations()
+    return advance(system, 0.125 * k1 + 0.375 * k2 + 0.375 * k3 + 0.125 * k4, dt)
+
+    # for it in range(10):
+    #     cur_acc = cur.accelerations()
+    #     acc = [(a + b) / 2 for a, b in zip(old_acc, cur_acc)]
+    #     cur = advance(old, acc)
     return cur
 
 
@@ -274,59 +319,61 @@ class Pullup(gym.Env):
         self.system.render(plt.gca())
 
 
-s = PointSystem(n=8, g=vec(0, -9.81))
+s = PointSystem(n=9, g=vec(0, -9.81))
+
+masses = [
+    1000,
+    5,
+    5,
+    15,
+    5,
+    40,
+    20,
+    10,
+    20,
+]
+coords = [
+    vec(y=0.0),
+    vec(y=0.0),
+    vec(y=-0.4),
+    vec(y=-0.8),
+    vec(y=-0.4),
+    vec(y=-1.28),
+    vec(y=-1.78),
+    vec(y=-2.28),
+    vec(x=0.15, y=-0.8),
+]
+s.mass = np.array(masses)
+s.position = np.array(coords)
+
 """ 
 Idx Name        Y       Mass
 0   bar         0.0     1000
 1   hands       0.0     5
 2   elbows      -0.4    5
-3   shoulders   -0.8    30
-4   head        -0.4    10
-5   hips        -1.28   30
+3   shoulders   -0.8    10
+4   head        -0.4    5
+5   hips        -1.28   40
 6   knees       -1.78   20
 7   feet        -2.28   10
+8   arm helper  -0.8    20
 """
-
-s.mass = list(
-    map(
-        Kg,
-        [
-            1000,
-            5,
-            5,
-            30,
-            10,
-            30,
-            20,
-            10,
-        ],
-    )
-)
-s.position = list(
-    map(
-        lambda y: vec(y=y),
-        [
-            0.0,
-            0.0,
-            -0.4,
-            -0.8,
-            -0.4,
-            -1.28,
-            -1.78,
-            -2.28,
-        ],
-    )
-)
-
 s.add_length(0, 1)
 s.add_length(1, 2)
 s.add_length(2, 3)
 s.add_length(3, 4)
+s.add_length(3, 8)
 s.add_length(3, 5)
 s.add_length(5, 6)
 s.add_length(6, 7)
+s.add_angle(1, 2, 3, rad(0), rad(120))  # arms elbows shoulders
+s.add_angle(8, 3, 2, rad(-90), rad(120))  # helper shoulders elbows
+s.add_angle(5, 3, 8, rad(-90), rad(-90))  # hips shoulders helper
+s.add_angle(5, 3, 4, rad(-1), rad(1))  # hips shoulders head
+s.add_angle(3, 5, 6, rad(-135), rad(10))  # shoulders hips knees
+s.add_angle(5, 6, 7, rad(0), rad(120))  # hips kneees feet
 
-
+simulated_time = 0.0
 for it in range(10**9):
     s.render(plt.gca())
     plt.xlim(-2, 2)
@@ -340,9 +387,16 @@ for it in range(10**9):
     #     print(np.round(x, 3), end=" ")
     # print()
     # print()
-    print(s.E_pot(), s.E_kin())
-    s = simulate(s, 0.01)
-    s = simulate(s, 0.01)
-    s = simulate(s, 0.01)
+    mgh, kx2, mv2 = s.E_gravity(), s.E_elastic(), s.E_kinetic()
+    print(
+        f"{simulated_time:.3f}: {mgh:.3f} + {kx2:.3f} + {mv2:.3f} = {mgh + kx2 + mv2:.3f}"
+    )
+    h = 0.003
+    for inner in range(10):
+        s = simulate(s, h)
+        simulated_time += h
     s.position[0] = vec()
-    sleep(0.17)
+    s.speed[0] = vec()
+    sleep(0.05)
+    if it < 20:
+        s.speed += np.random.randn(*s.speed.shape) * 0.5
