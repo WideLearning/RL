@@ -269,7 +269,9 @@ def simulate(
     #     cur = advance(old, acc)
     return cur
 
-
+"""
+No actual logic in this class yet. You can specify observations and rewards however you like.
+"""
 class Pullup(gym.Env):
     metadata: dict[str, Any] = {"render_modes": ["human"]}
 

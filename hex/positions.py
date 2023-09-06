@@ -20,7 +20,3 @@ add_position(
 add_position(
     "1.0, 1 turn", [(1, 0), (0, 1), (2, 0), (0, 2), (3, 0), (0, 3), (4, 0), (0, 4)]
 )
-
-# print(positions[0][1])
-# positions[0][1].put(Turn(0, 0))
-# print(positions[0][1].winner())

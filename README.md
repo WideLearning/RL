@@ -1,5 +1,3 @@
-Just a repository with reinforcement learning experiments.
-
 To use the environments you will want to install it as a module. 
 To do so run `pip install -e implementations` from the root of the repository.
 
@@ -39,3 +37,9 @@ It is supposed to be an upper-bound for all gradient methods. This algorithm has
 
 And this is an upper-bound for all algorithms, because it always takes the action with highest true value. 
 ![optimal](images/optimal.svg)
+
+## Pullup environment
+In `envs.pullup` there is a simple engine for simulating a system of pointlike particles with soft constraints on distances and angles between them. And there is a demonstration how it can be used to simulate something resembling a man swinging on a pullup bar.
+
+## Q-learning implementations
+In `algorithms.online` there are three versions of Q-learning, and in `algorithms.approximation` there are some simple function approximators that can be used with it. In `blackjack.py` and `cliffwalking.py` there are examples of using these algorithms with simple environments.
